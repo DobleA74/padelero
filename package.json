@@ -1,0 +1,14 @@
+{
+  "name": "padelero",
+  "version": "1.0.0",
+  "description": "Ranking simple para peña de pádel",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "express": "^4.19.2"
+  }
+}
