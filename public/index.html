@@ -59,7 +59,40 @@
     </section>
 
     <section class="card">
+      <h2>Ronda de hoy</h2>
+      <p class="hint">Marcá quién está presente y armá la ronda: las parejas iniciales se balancean por ranking. La pareja que gana sigue en cancha, pero como máximo 2 partidos seguidos — después pasa al final de la cola.</p>
+
+      <div id="attendance-setup">
+        <label>
+          Fecha
+          <input type="date" id="rotationDate" />
+        </label>
+        <ul id="attendance-list" class="checkbox-list"></ul>
+        <p id="rotation-error" class="error"></p>
+        <button type="button" id="build-rotation" class="primary">Guardar asistencia y armar ronda</button>
+      </div>
+
+      <div id="rotation-panel" hidden>
+        <div class="court">
+          <div class="court-team">
+            <span class="court-label">En cancha</span>
+            <span id="rotation-team-a" class="court-players"></span>
+          </div>
+          <span class="court-vs">vs</span>
+          <div class="court-team">
+            <span class="court-label">Desafía</span>
+            <span id="rotation-team-b" class="court-players"></span>
+          </div>
+        </div>
+        <p id="rotation-streak" class="hint"></p>
+        <p class="hint">Cola: <span id="rotation-queue"></span></p>
+        <button type="button" id="end-rotation" class="secondary">Terminar ronda</button>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>Cargar resultado</h2>
+      <p id="rotation-banner" class="hint scope-label" hidden>🔄 Ronda activa: los equipos ya están precargados abajo.</p>
       <form id="match-form">
         <fieldset>
           <legend>Equipo A</legend>
@@ -129,6 +162,7 @@
         <button type="submit" id="match-submit" class="primary">Guardar resultado</button>
         <button type="button" id="match-cancel-edit" class="secondary" hidden>Cancelar edición</button>
         <p id="match-error" class="error"></p>
+        <p id="match-success" class="success"></p>
       </form>
     </section>
 

@@ -30,6 +30,19 @@ const rangeToInput = document.getElementById('rangeTo');
 const rangeApplyBtn = document.getElementById('range-apply');
 const rangeResetBtn = document.getElementById('range-reset');
 const rangeLabel = document.getElementById('range-label');
+const matchSuccess = document.getElementById('match-success');
+const attendanceSetupEl = document.getElementById('attendance-setup');
+const rotationDateInput = document.getElementById('rotationDate');
+const attendanceListEl = document.getElementById('attendance-list');
+const rotationErrorEl = document.getElementById('rotation-error');
+const buildRotationBtn = document.getElementById('build-rotation');
+const rotationPanel = document.getElementById('rotation-panel');
+const rotationTeamAEl = document.getElementById('rotation-team-a');
+const rotationTeamBEl = document.getElementById('rotation-team-b');
+const rotationStreakEl = document.getElementById('rotation-streak');
+const rotationQueueEl = document.getElementById('rotation-queue');
+const endRotationBtn = document.getElementById('end-rotation');
+const rotationBanner = document.getElementById('rotation-banner');
 
 let selectedWinner = null; // 'A' | 'B'
 let selectedLoserSets = null; // 0 | 1
@@ -38,11 +51,13 @@ let matches = [];
 let editingMatchId = null;
 let rangeFrom = '';
 let rangeTo = '';
+let rotation = null; // { date, onCourt: {A:[id,id], B:[id,id]}, queue: [id...], defenderIds, streak }
+let attendanceChecked = new Set();
 
 playedAtInput.value = new Date().toISOString().slice(0, 10);
 
 const PIN_STORAGE_KEY = 'padelero_pin';
-const MUTATING_METHODS = new Set(['POST', 'PATCH', 'DELETE']);
+const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 function getStoredPin() {
   return localStorage.getItem(PIN_STORAGE_KEY);
@@ -167,6 +182,195 @@ function renderPartnerships(partnerships) {
     .join('');
 }
 
+function nameById(id) {
+  return players.find((p) => p.id === id)?.name || '?';
+}
+
+function sortIdsByPointsDesc(ids) {
+  return [...ids].sort((a, b) => {
+    const pa = players.find((p) => p.id === a)?.points ?? 0;
+    const pb = players.find((p) => p.id === b)?.points ?? 0;
+    if (pb !== pa) return pb - pa;
+    return nameById(a).localeCompare(nameById(b));
+  });
+}
+
+function snakePairFour(fourIds) {
+  const sorted = sortIdsByPointsDesc(fourIds);
+  return { A: [sorted[0], sorted[3]], B: [sorted[1], sorted[2]] };
+}
+
+function idsEqual(a, b) {
+  return a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',');
+}
+
+function buildRotation(date, presentIds) {
+  const sorted = sortIdsByPointsDesc(presentIds);
+  return {
+    date,
+    onCourt: snakePairFour(sorted.slice(0, 4)),
+    queue: sorted.slice(4),
+    defenderIds: null,
+    streak: 0,
+  };
+}
+
+function advanceRotation(winnerSide) {
+  if (!rotation || (winnerSide !== 'A' && winnerSide !== 'B')) return;
+  const loserSide = winnerSide === 'A' ? 'B' : 'A';
+  const winners = rotation.onCourt[winnerSide];
+  const losers = rotation.onCourt[loserSide];
+  const isSameDefenders = rotation.defenderIds && idsEqual(winners, rotation.defenderIds);
+  const newStreak = isSameDefenders ? rotation.streak + 1 : 1;
+
+  if (newStreak >= 2) {
+    const queue = [...rotation.queue, ...losers, ...winners];
+    const next4 = queue.splice(0, 4);
+    rotation.onCourt = snakePairFour(next4);
+    rotation.queue = queue;
+    rotation.defenderIds = null;
+    rotation.streak = 0;
+  } else {
+    const queue = [...rotation.queue, ...losers];
+    const next2 = queue.splice(0, 2);
+    rotation.onCourt = { A: winners, B: next2 };
+    rotation.queue = queue;
+    rotation.defenderIds = winners;
+    rotation.streak = newStreak;
+  }
+  saveRotationToStorage();
+}
+
+const ROTATION_STORAGE_KEY = 'padelero_rotation';
+
+function saveRotationToStorage() {
+  if (rotation) localStorage.setItem(ROTATION_STORAGE_KEY, JSON.stringify(rotation));
+  else localStorage.removeItem(ROTATION_STORAGE_KEY);
+}
+
+function loadRotationFromStorage() {
+  const raw = localStorage.getItem(ROTATION_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function syncMatchFormToRotation() {
+  if (!rotation) return;
+  teamSelects.A1.value = String(rotation.onCourt.A[0]);
+  teamSelects.A2.value = String(rotation.onCourt.A[1]);
+  teamSelects.B1.value = String(rotation.onCourt.B[0]);
+  teamSelects.B2.value = String(rotation.onCourt.B[1]);
+  playedAtInput.value = rotation.date;
+}
+
+function matchesRotationCourt(teamA1Id, teamA2Id, teamB1Id, teamB2Id) {
+  if (!rotation) return false;
+  const eq = (ids, courtIds) => idsEqual(ids, courtIds);
+  return eq([teamA1Id, teamA2Id], rotation.onCourt.A) && eq([teamB1Id, teamB2Id], rotation.onCourt.B);
+}
+
+function renderRotationPanel() {
+  if (!rotation) {
+    attendanceSetupEl.hidden = false;
+    rotationPanel.hidden = true;
+    rotationBanner.hidden = true;
+    return;
+  }
+  attendanceSetupEl.hidden = true;
+  rotationPanel.hidden = false;
+  rotationBanner.hidden = false;
+
+  const teamNames = (ids) => ids.map((id) => nameById(id)).join(' / ');
+  rotationTeamAEl.textContent = teamNames(rotation.onCourt.A);
+  rotationTeamBEl.textContent = teamNames(rotation.onCourt.B);
+  rotationStreakEl.textContent = rotation.streak > 0
+    ? `La pareja en cancha lleva ${rotation.streak} partido${rotation.streak > 1 ? 's' : ''} ganado${rotation.streak > 1 ? 's' : ''} seguido${rotation.streak > 1 ? 's' : ''} (máximo 2).`
+    : 'Primer partido de esta pareja en cancha.';
+  rotationQueueEl.textContent = rotation.queue.length
+    ? rotation.queue.map((id) => nameById(id)).join(', ')
+    : 'nadie esperando';
+}
+
+function renderAttendanceList() {
+  attendanceListEl.innerHTML = players
+    .map(
+      (p) => `
+      <li>
+        <input type="checkbox" id="att-${p.id}" value="${p.id}" ${attendanceChecked.has(p.id) ? 'checked' : ''} />
+        <label for="att-${p.id}">${escapeHtml(p.name)}</label>
+      </li>`
+    )
+    .join('');
+}
+
+let attendanceTouched = false;
+
+attendanceListEl.addEventListener('change', (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+  attendanceTouched = true;
+  const id = Number(target.value);
+  if (target.checked) attendanceChecked.add(id);
+  else attendanceChecked.delete(id);
+});
+
+async function loadAttendanceForDate(date) {
+  attendanceTouched = false;
+  let ids = [];
+  try {
+    ids = await api(`/api/attendance?date=${encodeURIComponent(date)}`);
+  } catch {
+    ids = [];
+  }
+  // Don't clobber the user's in-progress selection if they started checking
+  // boxes while this (possibly slow, courtside-wifi) request was in flight.
+  if (!attendanceTouched) {
+    attendanceChecked = new Set(ids);
+    renderAttendanceList();
+  }
+}
+
+rotationDateInput.addEventListener('change', () => {
+  loadAttendanceForDate(rotationDateInput.value);
+});
+
+buildRotationBtn.addEventListener('click', async () => {
+  rotationErrorEl.textContent = '';
+  const date = rotationDateInput.value || new Date().toISOString().slice(0, 10);
+  const presentIds = [...attendanceChecked].filter((id) => players.some((p) => p.id === id));
+  if (presentIds.length < 4) {
+    rotationErrorEl.textContent = 'Necesitás al menos 4 jugadores presentes';
+    return;
+  }
+  buildRotationBtn.disabled = true;
+  buildRotationBtn.textContent = 'Guardando...';
+  try {
+    await api('/api/attendance', {
+      method: 'PUT',
+      body: JSON.stringify({ date, playerIds: presentIds }),
+    });
+    rotation = buildRotation(date, presentIds);
+    saveRotationToStorage();
+    renderRotationPanel();
+    if (!editingMatchId) syncMatchFormToRotation();
+  } catch (err) {
+    rotationErrorEl.textContent = err.message;
+  } finally {
+    buildRotationBtn.disabled = false;
+    buildRotationBtn.textContent = 'Guardar asistencia y armar ronda';
+  }
+});
+
+endRotationBtn.addEventListener('click', () => {
+  rotation = null;
+  saveRotationToStorage();
+  renderRotationPanel();
+});
+
 function renderPlayerSelects() {
   const options = players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
   Object.values(teamSelects).forEach((select) => {
@@ -267,6 +471,8 @@ async function loadRanking() {
   renderRanking(ranking);
   renderPlayerSelects();
   renderPlayersList();
+  renderAttendanceList();
+  if (rotation && !editingMatchId) syncMatchFormToRotation();
 }
 
 async function loadMatches() {
@@ -380,6 +586,12 @@ matchForm.addEventListener('submit', async (e) => {
     return;
   }
 
+  const wasEditing = Boolean(editingMatchId);
+  const advancesRotation = !wasEditing && matchesRotationCourt(teamA1Id, teamA2Id, teamB1Id, teamB2Id);
+  const winnerSideForRotation = selectedWinner;
+
+  matchSubmitBtn.disabled = true;
+  matchSubmitBtn.textContent = 'Guardando...';
   try {
     const path = editingMatchId ? `/api/matches/${editingMatchId}` : '/api/matches';
     await api(path, {
@@ -399,9 +611,34 @@ matchForm.addEventListener('submit', async (e) => {
         playedAt: playedAtInput.value,
       }),
     });
-    window.location.reload();
+
+    if (wasEditing) exitMatchEditMode();
+
+    selectedWinner = null;
+    selectedLoserSets = null;
+    winnerButtons.forEach((b) => b.classList.remove('selected'));
+    scoreButtons.forEach((b) => b.classList.remove('selected'));
+    smashInputs.A1.value = 0;
+    smashInputs.A2.value = 0;
+    smashInputs.B1.value = 0;
+    smashInputs.B2.value = 0;
+    scoreNoteInput.value = '';
+
+    // Refresh players (and their points) before advancing the rotation, so a
+    // cap-out reshuffle balances against scores that include this match.
+    await loadAll();
+    if (advancesRotation) {
+      advanceRotation(winnerSideForRotation);
+      syncMatchFormToRotation();
+    }
+    renderRotationPanel();
+    matchSuccess.textContent = 'Guardado ✓';
+    setTimeout(() => { matchSuccess.textContent = ''; }, 2000);
   } catch (err) {
     matchError.textContent = err.message;
+  } finally {
+    matchSubmitBtn.disabled = false;
+    matchSubmitBtn.textContent = editingMatchId ? 'Guardar cambios' : 'Guardar resultado';
   }
 });
 
@@ -445,7 +682,7 @@ document.addEventListener('click', async (e) => {
     if (!trimmed || trimmed === player.name) return;
     try {
       await api(`/api/players/${id}`, { method: 'PATCH', body: JSON.stringify({ name: trimmed }) });
-      await Promise.all([loadRanking(), loadMatches()]);
+      await loadAll();
     } catch (err) {
       playerError.textContent = err.message;
     }
@@ -472,12 +709,20 @@ document.addEventListener('click', async (e) => {
     const id = target.dataset.id;
     if (!confirm('¿Borrar este partido?')) return;
     await api(`/api/matches/${id}`, { method: 'DELETE' });
-    await Promise.all([loadRanking(), loadMatches()]);
+    await loadAll();
   }
 });
 
 (async function init() {
   updatePinStatus();
   updateRangeLabel();
+  rotation = loadRotationFromStorage();
+  rotationDateInput.value = rotation ? rotation.date : new Date().toISOString().slice(0, 10);
   await loadAll();
+  if (rotation) {
+    syncMatchFormToRotation();
+  } else {
+    await loadAttendanceForDate(rotationDateInput.value);
+  }
+  renderRotationPanel();
 })();

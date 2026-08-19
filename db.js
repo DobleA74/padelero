@@ -34,9 +34,40 @@ function ensureSchema() {
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
       `);
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS attendance (
+          played_at TEXT NOT NULL,
+          player_id INTEGER NOT NULL REFERENCES players(id),
+          PRIMARY KEY (played_at, player_id)
+        )
+      `);
     })();
   }
   return schemaReady;
+}
+
+export async function getAttendance(date) {
+  await ensureSchema();
+  const { rows } = await client.execute({
+    sql: 'SELECT player_id AS playerId FROM attendance WHERE played_at = ?',
+    args: [date],
+  });
+  return rows.map((r) => Number(r.playerId));
+}
+
+export async function setAttendance(date, playerIds) {
+  await ensureSchema();
+  await client.batch(
+    [
+      { sql: 'DELETE FROM attendance WHERE played_at = ?', args: [date] },
+      ...playerIds.map((id) => ({
+        sql: 'INSERT INTO attendance (played_at, player_id) VALUES (?, ?)',
+        args: [date, id],
+      })),
+    ],
+    'write',
+  );
+  return { date, playerIds };
 }
 
 const CHAMPION_BONUS = 2;

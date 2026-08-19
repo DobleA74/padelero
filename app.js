@@ -11,6 +11,8 @@ import {
   addMatch,
   updateMatch,
   deleteMatch,
+  getAttendance,
+  setAttendance,
 } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -82,6 +84,25 @@ app.get('/api/partnerships', asyncHandler(async (req, res) => {
   const { error, value } = parseDateRange(req.query);
   if (error) return res.status(400).json({ error });
   res.json(await getPartnerships(value));
+}));
+
+app.get('/api/attendance', asyncHandler(async (req, res) => {
+  const date = req.query.date;
+  if (!date || !DATE_RE.test(date)) {
+    return res.status(400).json({ error: 'Fecha inválida' });
+  }
+  res.json(await getAttendance(date));
+}));
+
+app.put('/api/attendance', requirePin, asyncHandler(async (req, res) => {
+  const { date, playerIds } = req.body || {};
+  if (!date || !DATE_RE.test(date)) {
+    return res.status(400).json({ error: 'Fecha inválida' });
+  }
+  if (!Array.isArray(playerIds) || playerIds.some((id) => !Number.isInteger(id))) {
+    return res.status(400).json({ error: 'Lista de jugadores inválida' });
+  }
+  res.json(await setAttendance(date, playerIds));
 }));
 
 function validateMatchInput(body) {
