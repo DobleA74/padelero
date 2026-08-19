@@ -105,13 +105,21 @@ function computeStreaks(matchesDesc) {
   return streaks;
 }
 
-export async function getPartnerships() {
+const MIN_DATE = '0000-01-01';
+const MAX_DATE = '9999-12-31';
+
+export async function getPartnerships({ from = MIN_DATE, to = MAX_DATE } = {}) {
   await ensureSchema();
-  const { rows } = await client.execute(`
-    SELECT team_a1_id AS p1, team_a2_id AS p2, winning_team = 'A' AS win FROM matches
-    UNION ALL
-    SELECT team_b1_id AS p1, team_b2_id AS p2, winning_team = 'B' AS win FROM matches
-  `);
+  const { rows } = await client.execute({
+    sql: `
+      SELECT team_a1_id AS p1, team_a2_id AS p2, winning_team = 'A' AS win
+      FROM matches WHERE played_at >= ? AND played_at <= ?
+      UNION ALL
+      SELECT team_b1_id AS p1, team_b2_id AS p2, winning_team = 'B' AS win
+      FROM matches WHERE played_at >= ? AND played_at <= ?
+    `,
+    args: [from, to, from, to],
+  });
 
   const pairs = new Map();
   for (const r of rows) {
@@ -140,35 +148,46 @@ export async function getPartnerships() {
     .sort((a, b) => b.winRate - a.winRate || b.played - a.played);
 }
 
-export async function getRanking() {
+export async function getRanking({ from = MIN_DATE, to = MAX_DATE } = {}) {
   await ensureSchema();
-  const { rows } = await client.execute(`
-    WITH results AS (
-      SELECT team_a1_id AS player_id, winning_team = 'A' AS win, loser_sets, smash_a1 AS smash FROM matches
-      UNION ALL
-      SELECT team_a2_id AS player_id, winning_team = 'A' AS win, loser_sets, smash_a2 AS smash FROM matches
-      UNION ALL
-      SELECT team_b1_id AS player_id, winning_team = 'B' AS win, loser_sets, smash_b1 AS smash FROM matches
-      UNION ALL
-      SELECT team_b2_id AS player_id, winning_team = 'B' AS win, loser_sets, smash_b2 AS smash FROM matches
-    )
-    SELECT
-      p.id,
-      p.name,
-      COALESCE(SUM(r.win), 0) AS wins,
-      COALESCE(SUM(1 - r.win), 0) AS losses,
-      COALESCE(SUM(r.win * (3 - r.loser_sets) + (1 - r.win) * r.loser_sets + r.smash), 0) AS points
-    FROM players p
-    LEFT JOIN results r ON r.player_id = p.id
-    GROUP BY p.id, p.name
-  `);
+  const { rows } = await client.execute({
+    sql: `
+      WITH results AS (
+        SELECT team_a1_id AS player_id, winning_team = 'A' AS win, loser_sets, smash_a1 AS smash
+        FROM matches WHERE played_at >= ? AND played_at <= ?
+        UNION ALL
+        SELECT team_a2_id AS player_id, winning_team = 'A' AS win, loser_sets, smash_a2 AS smash
+        FROM matches WHERE played_at >= ? AND played_at <= ?
+        UNION ALL
+        SELECT team_b1_id AS player_id, winning_team = 'B' AS win, loser_sets, smash_b1 AS smash
+        FROM matches WHERE played_at >= ? AND played_at <= ?
+        UNION ALL
+        SELECT team_b2_id AS player_id, winning_team = 'B' AS win, loser_sets, smash_b2 AS smash
+        FROM matches WHERE played_at >= ? AND played_at <= ?
+      )
+      SELECT
+        p.id,
+        p.name,
+        COALESCE(SUM(r.win), 0) AS wins,
+        COALESCE(SUM(1 - r.win), 0) AS losses,
+        COALESCE(SUM(r.win * (3 - r.loser_sets) + (1 - r.win) * r.loser_sets + r.smash), 0) AS points
+      FROM players p
+      LEFT JOIN results r ON r.player_id = p.id
+      GROUP BY p.id, p.name
+    `,
+    args: [from, to, from, to, from, to, from, to],
+  });
 
-  const { rows: matchRows } = await client.execute(`
-    SELECT team_a1_id AS teamA1Id, team_a2_id AS teamA2Id, team_b1_id AS teamB1Id, team_b2_id AS teamB2Id,
-           winning_team AS winningTeam, played_at AS playedAt
-    FROM matches
-    ORDER BY played_at DESC, id DESC
-  `);
+  const { rows: matchRows } = await client.execute({
+    sql: `
+      SELECT team_a1_id AS teamA1Id, team_a2_id AS teamA2Id, team_b1_id AS teamB1Id, team_b2_id AS teamB2Id,
+             winning_team AS winningTeam, played_at AS playedAt
+      FROM matches
+      WHERE played_at >= ? AND played_at <= ?
+      ORDER BY played_at DESC, id DESC
+    `,
+    args: [from, to],
+  });
   const bonusByPlayer = computeDailyChampionBonus(matchRows);
   const streakByPlayer = computeStreaks(matchRows);
 
@@ -228,27 +247,31 @@ export async function deletePlayer(id) {
   await client.execute({ sql: 'DELETE FROM players WHERE id = ?', args: [id] });
 }
 
-export async function listMatches() {
+export async function listMatches({ from = MIN_DATE, to = MAX_DATE } = {}) {
   await ensureSchema();
-  const { rows } = await client.execute(`
-    SELECT
-      m.id,
-      m.team_a1_id AS teamA1Id, pa1.name AS teamA1Name,
-      m.team_a2_id AS teamA2Id, pa2.name AS teamA2Name,
-      m.team_b1_id AS teamB1Id, pb1.name AS teamB1Name,
-      m.team_b2_id AS teamB2Id, pb2.name AS teamB2Name,
-      m.winning_team AS winningTeam,
-      m.loser_sets AS loserSets,
-      m.smash_a1 AS smashA1, m.smash_a2 AS smashA2, m.smash_b1 AS smashB1, m.smash_b2 AS smashB2,
-      m.score_note AS scoreNote,
-      m.played_at AS playedAt
-    FROM matches m
-    JOIN players pa1 ON pa1.id = m.team_a1_id
-    JOIN players pa2 ON pa2.id = m.team_a2_id
-    JOIN players pb1 ON pb1.id = m.team_b1_id
-    JOIN players pb2 ON pb2.id = m.team_b2_id
-    ORDER BY m.played_at DESC, m.id DESC
-  `);
+  const { rows } = await client.execute({
+    sql: `
+      SELECT
+        m.id,
+        m.team_a1_id AS teamA1Id, pa1.name AS teamA1Name,
+        m.team_a2_id AS teamA2Id, pa2.name AS teamA2Name,
+        m.team_b1_id AS teamB1Id, pb1.name AS teamB1Name,
+        m.team_b2_id AS teamB2Id, pb2.name AS teamB2Name,
+        m.winning_team AS winningTeam,
+        m.loser_sets AS loserSets,
+        m.smash_a1 AS smashA1, m.smash_a2 AS smashA2, m.smash_b1 AS smashB1, m.smash_b2 AS smashB2,
+        m.score_note AS scoreNote,
+        m.played_at AS playedAt
+      FROM matches m
+      JOIN players pa1 ON pa1.id = m.team_a1_id
+      JOIN players pa2 ON pa2.id = m.team_a2_id
+      JOIN players pb1 ON pb1.id = m.team_b1_id
+      JOIN players pb2 ON pb2.id = m.team_b2_id
+      WHERE m.played_at >= ? AND m.played_at <= ?
+      ORDER BY m.played_at DESC, m.id DESC
+    `,
+    args: [from, to],
+  });
   return rows.map((r) => ({
     id: Number(r.id),
     teamA1Id: Number(r.teamA1Id),

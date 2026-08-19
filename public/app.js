@@ -24,25 +24,102 @@ const newPlayerNameInput = document.getElementById('newPlayerName');
 const playerError = document.getElementById('player-error');
 const playersList = document.getElementById('players-list');
 const matchesList = document.getElementById('matches-list');
+const pinStatusBtn = document.getElementById('pin-status');
+const rangeFromInput = document.getElementById('rangeFrom');
+const rangeToInput = document.getElementById('rangeTo');
+const rangeApplyBtn = document.getElementById('range-apply');
+const rangeResetBtn = document.getElementById('range-reset');
+const rangeLabel = document.getElementById('range-label');
 
 let selectedWinner = null; // 'A' | 'B'
 let selectedLoserSets = null; // 0 | 1
 let players = [];
 let matches = [];
 let editingMatchId = null;
+let rangeFrom = '';
+let rangeTo = '';
 
 playedAtInput.value = new Date().toISOString().slice(0, 10);
 
-async function api(path, options) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+const PIN_STORAGE_KEY = 'padelero_pin';
+const MUTATING_METHODS = new Set(['POST', 'PATCH', 'DELETE']);
+
+function getStoredPin() {
+  return localStorage.getItem(PIN_STORAGE_KEY);
+}
+
+function setStoredPin(pin) {
+  if (pin) localStorage.setItem(PIN_STORAGE_KEY, pin);
+  else localStorage.removeItem(PIN_STORAGE_KEY);
+}
+
+function updatePinStatus() {
+  const pin = getStoredPin();
+  pinStatusBtn.textContent = pin ? '🔓 PIN' : '🔒 PIN';
+  pinStatusBtn.classList.toggle('unlocked', Boolean(pin));
+}
+
+function ensurePin() {
+  let pin = getStoredPin();
+  if (!pin) {
+    const entered = prompt('Ingresá el PIN de la peña para poder editar');
+    if (entered && entered.trim()) {
+      pin = entered.trim();
+      setStoredPin(pin);
+      updatePinStatus();
+    }
+  }
+  return pin;
+}
+
+pinStatusBtn.addEventListener('click', () => {
+  const current = getStoredPin();
+  const next = prompt(current ? 'Cambiar PIN (vacío para borrarlo)' : 'Ingresá el PIN de la peña');
+  if (next === null) return;
+  setStoredPin(next.trim() || null);
+  updatePinStatus();
+});
+
+async function api(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (MUTATING_METHODS.has(method)) {
+    const pin = ensurePin();
+    if (!pin) throw new Error('Se necesita el PIN para esta acción');
+    headers['X-Pin'] = pin;
+  }
+  const res = await fetch(path, { ...options, method, headers });
+  if (res.status === 401) {
+    setStoredPin(null);
+    updatePinStatus();
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'PIN incorrecto');
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || 'Error inesperado');
   }
   return res.status === 204 ? null : res.json();
+}
+
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function initials(name) {
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] || '';
+  const second = parts.length > 1 ? parts[1][0] : parts[0]?.[1] || '';
+  return (first + second).toUpperCase();
+}
+
+function avatarHtml(name) {
+  const hue = hashString(name) % 360;
+  return `<span class="avatar" style="background:hsl(${hue}, 55%, 45%)">${escapeHtml(initials(name))}</span>`;
 }
 
 function streakBadge(streak) {
@@ -61,7 +138,7 @@ function renderRanking(ranking) {
       (r, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td>${escapeHtml(r.name)}${streakBadge(r.streak)}</td>
+        <td>${avatarHtml(r.name)}${escapeHtml(r.name)}${streakBadge(r.streak)}</td>
         <td>${r.played}</td>
         <td>${r.wins}</td>
         <td>${r.losses}</td>
@@ -111,7 +188,7 @@ function renderPlayersList() {
     .map(
       (p) => `
       <li data-id="${p.id}">
-        <span>${escapeHtml(p.name)}</span>
+        <span>${avatarHtml(p.name)}${escapeHtml(p.name)}</span>
         <span class="item-actions">
           <button class="edit-btn" data-action="edit-player" data-id="${p.id}">Editar</button>
           <button class="delete-btn" data-action="delete-player" data-id="${p.id}">Borrar</button>
@@ -166,8 +243,26 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function buildRangeQuery() {
+  const params = new URLSearchParams();
+  if (rangeFrom) params.set('from', rangeFrom);
+  if (rangeTo) params.set('to', rangeTo);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function updateRangeLabel() {
+  if (!rangeFrom && !rangeTo) {
+    rangeLabel.textContent = 'Mostrando: ranking global (histórico completo)';
+    rangeResetBtn.hidden = true;
+  } else {
+    rangeLabel.textContent = `Mostrando: partidos desde ${rangeFrom || 'el inicio'} hasta ${rangeTo || 'hoy'}`;
+    rangeResetBtn.hidden = false;
+  }
+}
+
 async function loadRanking() {
-  const ranking = await api('/api/players');
+  const ranking = await api(`/api/players${buildRangeQuery()}`);
   players = ranking;
   renderRanking(ranking);
   renderPlayerSelects();
@@ -175,14 +270,34 @@ async function loadRanking() {
 }
 
 async function loadMatches() {
-  matches = await api('/api/matches');
+  matches = await api(`/api/matches${buildRangeQuery()}`);
   renderMatches(matches);
 }
 
 async function loadPartnerships() {
-  const partnerships = await api('/api/partnerships');
+  const partnerships = await api(`/api/partnerships${buildRangeQuery()}`);
   renderPartnerships(partnerships);
 }
+
+async function loadAll() {
+  await Promise.all([loadRanking(), loadMatches(), loadPartnerships()]);
+}
+
+rangeApplyBtn.addEventListener('click', async () => {
+  rangeFrom = rangeFromInput.value;
+  rangeTo = rangeToInput.value;
+  updateRangeLabel();
+  await loadAll();
+});
+
+rangeResetBtn.addEventListener('click', async () => {
+  rangeFrom = '';
+  rangeTo = '';
+  rangeFromInput.value = '';
+  rangeToInput.value = '';
+  updateRangeLabel();
+  await loadAll();
+});
 
 function whatsappShareUrl(m) {
   const teamA = `${m.teamA1Name}/${m.teamA2Name}`;
@@ -362,7 +477,7 @@ document.addEventListener('click', async (e) => {
 });
 
 (async function init() {
-  await loadRanking();
-  await loadMatches();
-  await loadPartnerships();
+  updatePinStatus();
+  updateRangeLabel();
+  await loadAll();
 })();

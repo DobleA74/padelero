@@ -23,11 +23,35 @@ const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+function requirePin(req, res, next) {
+  const expected = process.env.APP_PIN;
+  if (!expected) return next();
+  if (req.header('X-Pin') !== expected) {
+    return res.status(401).json({ error: 'PIN incorrecto' });
+  }
+  next();
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateRange(query) {
+  const { from, to } = query || {};
+  if ((from && !DATE_RE.test(from)) || (to && !DATE_RE.test(to))) {
+    return { error: 'Rango de fechas inválido' };
+  }
+  const range = {};
+  if (from) range.from = from;
+  if (to) range.to = to;
+  return { value: range };
+}
+
 app.get('/api/players', asyncHandler(async (req, res) => {
-  res.json(await getRanking());
+  const { error, value } = parseDateRange(req.query);
+  if (error) return res.status(400).json({ error });
+  res.json(await getRanking(value));
 }));
 
-app.post('/api/players', asyncHandler(async (req, res) => {
+app.post('/api/players', requirePin, asyncHandler(async (req, res) => {
   const name = (req.body?.name || '').trim();
   if (!name) {
     return res.status(400).json({ error: 'El nombre es obligatorio' });
@@ -35,7 +59,7 @@ app.post('/api/players', asyncHandler(async (req, res) => {
   res.status(201).json(await addPlayer(name));
 }));
 
-app.patch('/api/players/:id', asyncHandler(async (req, res) => {
+app.patch('/api/players/:id', requirePin, asyncHandler(async (req, res) => {
   const name = (req.body?.name || '').trim();
   if (!name) {
     return res.status(400).json({ error: 'El nombre es obligatorio' });
@@ -43,17 +67,21 @@ app.patch('/api/players/:id', asyncHandler(async (req, res) => {
   res.json(await renamePlayer(Number(req.params.id), name));
 }));
 
-app.delete('/api/players/:id', asyncHandler(async (req, res) => {
+app.delete('/api/players/:id', requirePin, asyncHandler(async (req, res) => {
   await deletePlayer(Number(req.params.id));
   res.status(204).end();
 }));
 
 app.get('/api/matches', asyncHandler(async (req, res) => {
-  res.json(await listMatches());
+  const { error, value } = parseDateRange(req.query);
+  if (error) return res.status(400).json({ error });
+  res.json(await listMatches(value));
 }));
 
 app.get('/api/partnerships', asyncHandler(async (req, res) => {
-  res.json(await getPartnerships());
+  const { error, value } = parseDateRange(req.query);
+  if (error) return res.status(400).json({ error });
+  res.json(await getPartnerships(value));
 }));
 
 function validateMatchInput(body) {
@@ -103,7 +131,7 @@ function validateMatchInput(body) {
   };
 }
 
-app.post('/api/matches', asyncHandler(async (req, res) => {
+app.post('/api/matches', requirePin, asyncHandler(async (req, res) => {
   const { error, value } = validateMatchInput(req.body);
   if (error) {
     return res.status(400).json({ error });
@@ -111,7 +139,7 @@ app.post('/api/matches', asyncHandler(async (req, res) => {
   res.status(201).json(await addMatch(value));
 }));
 
-app.patch('/api/matches/:id', asyncHandler(async (req, res) => {
+app.patch('/api/matches/:id', requirePin, asyncHandler(async (req, res) => {
   const { error, value } = validateMatchInput(req.body);
   if (error) {
     return res.status(400).json({ error });
@@ -119,7 +147,7 @@ app.patch('/api/matches/:id', asyncHandler(async (req, res) => {
   res.json(await updateMatch(Number(req.params.id), value));
 }));
 
-app.delete('/api/matches/:id', asyncHandler(async (req, res) => {
+app.delete('/api/matches/:id', requirePin, asyncHandler(async (req, res) => {
   await deleteMatch(Number(req.params.id));
   res.status(204).end();
 }));

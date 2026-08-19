@@ -40,6 +40,7 @@ body {
 header {
   padding: 1.5rem 1rem 1rem;
   text-align: center;
+  position: relative;
 }
 
 header h1 {
@@ -50,6 +51,60 @@ header h1 {
 .subtitle {
   margin: 0.25rem 0 0;
   color: var(--text-muted);
+}
+
+.pin-status {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.pin-status.unlocked {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.range-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.range-filter label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.range-filter input[type="date"] {
+  padding: 0.4rem;
+}
+
+.scope-label {
+  font-style: italic;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  vertical-align: middle;
+  margin-right: 0.4rem;
 }
 
 main {
