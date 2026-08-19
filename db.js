@@ -77,6 +77,69 @@ function computeDailyChampionBonus(matches) {
   return bonus;
 }
 
+function computeStreaks(matchesDesc) {
+  const resultsByPlayer = new Map();
+  for (const m of matchesDesc) {
+    const entries = [
+      [Number(m.teamA1Id), m.winningTeam === 'A'],
+      [Number(m.teamA2Id), m.winningTeam === 'A'],
+      [Number(m.teamB1Id), m.winningTeam === 'B'],
+      [Number(m.teamB2Id), m.winningTeam === 'B'],
+    ];
+    for (const [id, won] of entries) {
+      if (!resultsByPlayer.has(id)) resultsByPlayer.set(id, []);
+      resultsByPlayer.get(id).push(won);
+    }
+  }
+
+  const streaks = new Map();
+  for (const [id, results] of resultsByPlayer) {
+    const first = results[0];
+    let count = 0;
+    for (const won of results) {
+      if (won !== first) break;
+      count++;
+    }
+    streaks.set(id, first ? count : -count);
+  }
+  return streaks;
+}
+
+export async function getPartnerships() {
+  await ensureSchema();
+  const { rows } = await client.execute(`
+    SELECT team_a1_id AS p1, team_a2_id AS p2, winning_team = 'A' AS win FROM matches
+    UNION ALL
+    SELECT team_b1_id AS p1, team_b2_id AS p2, winning_team = 'B' AS win FROM matches
+  `);
+
+  const pairs = new Map();
+  for (const r of rows) {
+    const ids = [Number(r.p1), Number(r.p2)].sort((a, b) => a - b);
+    const key = ids.join(',');
+    if (!pairs.has(key)) pairs.set(key, { ids, played: 0, wins: 0 });
+    const entry = pairs.get(key);
+    entry.played += 1;
+    entry.wins += Number(r.win);
+  }
+
+  const { rows: playerRows } = await client.execute('SELECT id, name FROM players');
+  const nameById = new Map(playerRows.map((p) => [Number(p.id), p.name]));
+
+  return [...pairs.values()]
+    .map((e) => ({
+      player1Id: e.ids[0],
+      player1Name: nameById.get(e.ids[0]),
+      player2Id: e.ids[1],
+      player2Name: nameById.get(e.ids[1]),
+      played: e.played,
+      wins: e.wins,
+      losses: e.played - e.wins,
+      winRate: e.played ? e.wins / e.played : 0,
+    }))
+    .sort((a, b) => b.winRate - a.winRate || b.played - a.played);
+}
+
 export async function getRanking() {
   await ensureSchema();
   const { rows } = await client.execute(`
@@ -104,20 +167,25 @@ export async function getRanking() {
     SELECT team_a1_id AS teamA1Id, team_a2_id AS teamA2Id, team_b1_id AS teamB1Id, team_b2_id AS teamB2Id,
            winning_team AS winningTeam, played_at AS playedAt
     FROM matches
+    ORDER BY played_at DESC, id DESC
   `);
   const bonusByPlayer = computeDailyChampionBonus(matchRows);
+  const streakByPlayer = computeStreaks(matchRows);
 
   return rows
     .map((r) => {
       const wins = Number(r.wins);
       const losses = Number(r.losses);
+      const played = wins + losses;
       const id = Number(r.id);
       return {
         id,
         name: r.name,
-        played: wins + losses,
+        played,
         wins,
         losses,
+        winRate: played ? wins / played : 0,
+        streak: streakByPlayer.get(id) || 0,
         points: Number(r.points) + (bonusByPlayer.get(id) || 0),
       };
     })

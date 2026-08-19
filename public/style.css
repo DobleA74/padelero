@@ -228,6 +228,19 @@ button.secondary {
   gap: 0.25rem;
 }
 
+.streak {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.streak-up {
+  color: var(--accent);
+}
+
+.streak-down {
+  color: var(--danger);
+}
+
 .error {
   color: var(--danger);
   font-size: 0.85rem;

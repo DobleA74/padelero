@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
   getRanking,
+  getPartnerships,
   addPlayer,
   renamePlayer,
   deletePlayer,
@@ -49,6 +50,10 @@ app.delete('/api/players/:id', asyncHandler(async (req, res) => {
 
 app.get('/api/matches', asyncHandler(async (req, res) => {
   res.json(await listMatches());
+}));
+
+app.get('/api/partnerships', asyncHandler(async (req, res) => {
+  res.json(await getPartnerships());
 }));
 
 function validateMatchInput(body) {

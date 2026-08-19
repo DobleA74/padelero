@@ -45,9 +45,15 @@ async function api(path, options) {
   return res.status === 204 ? null : res.json();
 }
 
+function streakBadge(streak) {
+  if (streak >= 2) return ` <span class="streak streak-up">🔥${streak}</span>`;
+  if (streak <= -2) return ` <span class="streak streak-down">🧊${-streak}</span>`;
+  return '';
+}
+
 function renderRanking(ranking) {
   if (ranking.length === 0) {
-    rankingBody.innerHTML = '<tr><td colspan="6" class="empty">Sin jugadores todavía</td></tr>';
+    rankingBody.innerHTML = '<tr><td colspan="7" class="empty">Sin jugadores todavía</td></tr>';
     return;
   }
   rankingBody.innerHTML = ranking
@@ -55,12 +61,31 @@ function renderRanking(ranking) {
       (r, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.name)}${streakBadge(r.streak)}</td>
         <td>${r.played}</td>
         <td>${r.wins}</td>
         <td>${r.losses}</td>
+        <td>${Math.round(r.winRate * 100)}%</td>
         <td>${r.points}</td>
       </tr>`
+    )
+    .join('');
+}
+
+function renderPartnerships(partnerships) {
+  const list = document.getElementById('partnerships-list');
+  const eligible = partnerships.filter((p) => p.played >= 3).slice(0, 5);
+  if (eligible.length === 0) {
+    list.innerHTML = '<li class="empty">Todavía no hay suficientes partidos</li>';
+    return;
+  }
+  list.innerHTML = eligible
+    .map(
+      (p) => `
+      <li>
+        <span>${escapeHtml(p.player1Name)} / ${escapeHtml(p.player2Name)}</span>
+        <span>${p.wins}-${p.losses} · ${Math.round(p.winRate * 100)}%</span>
+      </li>`
     )
     .join('');
 }
@@ -126,6 +151,7 @@ function renderMatches(matches) {
           <span class="match-date">${m.playedAt}</span>
         </div>
         <span class="item-actions">
+          <a class="edit-btn" href="${whatsappShareUrl(m)}" target="_blank" rel="noopener">📤</a>
           <button class="edit-btn" data-action="edit-match" data-id="${m.id}">Editar</button>
           <button class="delete-btn" data-action="delete-match" data-id="${m.id}">Borrar</button>
         </span>
@@ -151,6 +177,22 @@ async function loadRanking() {
 async function loadMatches() {
   matches = await api('/api/matches');
   renderMatches(matches);
+}
+
+async function loadPartnerships() {
+  const partnerships = await api('/api/partnerships');
+  renderPartnerships(partnerships);
+}
+
+function whatsappShareUrl(m) {
+  const teamA = `${m.teamA1Name}/${m.teamA2Name}`;
+  const teamB = `${m.teamB1Name}/${m.teamB2Name}`;
+  const winners = m.winningTeam === 'A' ? teamA : teamB;
+  const losers = m.winningTeam === 'A' ? teamB : teamA;
+  const setScore = m.loserSets === 0 ? '2-0' : '2-1';
+  const scorePart = m.scoreNote ? ` (${m.scoreNote})` : '';
+  const text = `🎾 ${winners} le ganaron a ${losers} ${setScore}${scorePart}`;
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 
 function enterMatchEditMode(match) {
@@ -322,4 +364,5 @@ document.addEventListener('click', async (e) => {
 (async function init() {
   await loadRanking();
   await loadMatches();
+  await loadPartnerships();
 })();
