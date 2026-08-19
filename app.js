@@ -13,7 +13,10 @@ import {
   deleteMatch,
   getAttendance,
   setAttendance,
+  getRotationState,
+  saveRotationState,
 } from './db.js';
+import { buildRotation, advanceRotation } from './rotation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -103,6 +106,49 @@ app.put('/api/attendance', requirePin, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Lista de jugadores inválida' });
   }
   res.json(await setAttendance(date, playerIds));
+}));
+
+async function getPlayerMeta() {
+  const ranking = await getRanking({});
+  const meta = new Map();
+  for (const p of ranking) meta.set(p.id, { points: p.points, name: p.name });
+  return meta;
+}
+
+app.get('/api/rotation', asyncHandler(async (req, res) => {
+  res.json(await getRotationState());
+}));
+
+app.post('/api/rotation', requirePin, asyncHandler(async (req, res) => {
+  const { date, playerIds } = req.body || {};
+  if (!date || !DATE_RE.test(date)) {
+    return res.status(400).json({ error: 'Fecha inválida' });
+  }
+  if (!Array.isArray(playerIds) || playerIds.length < 4 || playerIds.some((id) => !Number.isInteger(id))) {
+    return res.status(400).json({ error: 'Necesitás al menos 4 jugadores presentes' });
+  }
+  await setAttendance(date, playerIds);
+  const meta = await getPlayerMeta();
+  const rotation = buildRotation(date, playerIds, meta);
+  res.json(await saveRotationState(rotation));
+}));
+
+app.post('/api/rotation/advance', requirePin, asyncHandler(async (req, res) => {
+  const { winnerSide } = req.body || {};
+  if (winnerSide !== 'A' && winnerSide !== 'B') {
+    return res.status(400).json({ error: 'Falta indicar el equipo ganador' });
+  }
+  const current = await getRotationState();
+  if (!current) {
+    return res.status(409).json({ error: 'No hay una ronda activa' });
+  }
+  const meta = await getPlayerMeta();
+  res.json(await saveRotationState(advanceRotation(current, winnerSide, meta)));
+}));
+
+app.delete('/api/rotation', requirePin, asyncHandler(async (req, res) => {
+  await saveRotationState(null);
+  res.status(204).end();
 }));
 
 function validateMatchInput(body) {

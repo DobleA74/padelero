@@ -186,76 +186,21 @@ function nameById(id) {
   return players.find((p) => p.id === id)?.name || '?';
 }
 
-function sortIdsByPointsDesc(ids) {
-  return [...ids].sort((a, b) => {
-    const pa = players.find((p) => p.id === a)?.points ?? 0;
-    const pb = players.find((p) => p.id === b)?.points ?? 0;
-    if (pb !== pa) return pb - pa;
-    return nameById(a).localeCompare(nameById(b));
-  });
-}
-
-function snakePairFour(fourIds) {
-  const sorted = sortIdsByPointsDesc(fourIds);
-  return { A: [sorted[0], sorted[3]], B: [sorted[1], sorted[2]] };
-}
-
 function idsEqual(a, b) {
   return a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',');
 }
 
-function buildRotation(date, presentIds) {
-  const sorted = sortIdsByPointsDesc(presentIds);
-  return {
-    date,
-    onCourt: snakePairFour(sorted.slice(0, 4)),
-    queue: sorted.slice(4),
-    defenderIds: null,
-    streak: 0,
-  };
+async function loadRotation() {
+  rotation = await api('/api/rotation');
+  renderRotationPanel();
+  if (!editingMatchId) syncMatchFormToRotation();
 }
 
-function advanceRotation(winnerSide) {
-  if (!rotation || (winnerSide !== 'A' && winnerSide !== 'B')) return;
-  const loserSide = winnerSide === 'A' ? 'B' : 'A';
-  const winners = rotation.onCourt[winnerSide];
-  const losers = rotation.onCourt[loserSide];
-  const isSameDefenders = rotation.defenderIds && idsEqual(winners, rotation.defenderIds);
-  const newStreak = isSameDefenders ? rotation.streak + 1 : 1;
-
-  if (newStreak >= 2) {
-    const queue = [...rotation.queue, ...losers, ...winners];
-    const next4 = queue.splice(0, 4);
-    rotation.onCourt = snakePairFour(next4);
-    rotation.queue = queue;
-    rotation.defenderIds = null;
-    rotation.streak = 0;
-  } else {
-    const queue = [...rotation.queue, ...losers];
-    const next2 = queue.splice(0, 2);
-    rotation.onCourt = { A: winners, B: next2 };
-    rotation.queue = queue;
-    rotation.defenderIds = winners;
-    rotation.streak = newStreak;
-  }
-  saveRotationToStorage();
-}
-
-const ROTATION_STORAGE_KEY = 'padelero_rotation';
-
-function saveRotationToStorage() {
-  if (rotation) localStorage.setItem(ROTATION_STORAGE_KEY, JSON.stringify(rotation));
-  else localStorage.removeItem(ROTATION_STORAGE_KEY);
-}
-
-function loadRotationFromStorage() {
-  const raw = localStorage.getItem(ROTATION_STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+function startRotationPolling() {
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    loadRotation().catch(() => {});
+  }, 4000);
 }
 
 function syncMatchFormToRotation() {
@@ -349,12 +294,10 @@ buildRotationBtn.addEventListener('click', async () => {
   buildRotationBtn.disabled = true;
   buildRotationBtn.textContent = 'Guardando...';
   try {
-    await api('/api/attendance', {
-      method: 'PUT',
+    rotation = await api('/api/rotation', {
+      method: 'POST',
       body: JSON.stringify({ date, playerIds: presentIds }),
     });
-    rotation = buildRotation(date, presentIds);
-    saveRotationToStorage();
     renderRotationPanel();
     if (!editingMatchId) syncMatchFormToRotation();
   } catch (err) {
@@ -365,10 +308,14 @@ buildRotationBtn.addEventListener('click', async () => {
   }
 });
 
-endRotationBtn.addEventListener('click', () => {
-  rotation = null;
-  saveRotationToStorage();
-  renderRotationPanel();
+endRotationBtn.addEventListener('click', async () => {
+  try {
+    await api('/api/rotation', { method: 'DELETE' });
+    rotation = null;
+    renderRotationPanel();
+  } catch (err) {
+    rotationErrorEl.textContent = err.message;
+  }
 });
 
 function renderPlayerSelects() {
@@ -624,11 +571,16 @@ matchForm.addEventListener('submit', async (e) => {
     smashInputs.B2.value = 0;
     scoreNoteInput.value = '';
 
-    // Refresh players (and their points) before advancing the rotation, so a
-    // cap-out reshuffle balances against scores that include this match.
     await loadAll();
     if (advancesRotation) {
-      advanceRotation(winnerSideForRotation);
+      try {
+        rotation = await api('/api/rotation/advance', {
+          method: 'POST',
+          body: JSON.stringify({ winnerSide: winnerSideForRotation }),
+        });
+      } catch {
+        rotation = await api('/api/rotation');
+      }
       syncMatchFormToRotation();
     }
     renderRotationPanel();
@@ -716,13 +668,15 @@ document.addEventListener('click', async (e) => {
 (async function init() {
   updatePinStatus();
   updateRangeLabel();
-  rotation = loadRotationFromStorage();
-  rotationDateInput.value = rotation ? rotation.date : new Date().toISOString().slice(0, 10);
+  rotationDateInput.value = new Date().toISOString().slice(0, 10);
   await loadAll();
+  rotation = await api('/api/rotation');
+  rotationDateInput.value = rotation ? rotation.date : new Date().toISOString().slice(0, 10);
   if (rotation) {
     syncMatchFormToRotation();
   } else {
     await loadAttendanceForDate(rotationDateInput.value);
   }
   renderRotationPanel();
+  startRotationPolling();
 })();

@@ -41,9 +41,38 @@ function ensureSchema() {
           PRIMARY KEY (played_at, player_id)
         )
       `);
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS rotation_state (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          state TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
     })();
   }
   return schemaReady;
+}
+
+export async function getRotationState() {
+  await ensureSchema();
+  const { rows } = await client.execute('SELECT state FROM rotation_state WHERE id = 1');
+  return rows.length ? JSON.parse(rows[0].state) : null;
+}
+
+export async function saveRotationState(state) {
+  await ensureSchema();
+  if (state === null) {
+    await client.execute('DELETE FROM rotation_state WHERE id = 1');
+    return null;
+  }
+  await client.execute({
+    sql: `
+      INSERT INTO rotation_state (id, state, updated_at) VALUES (1, ?, datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at
+    `,
+    args: [JSON.stringify(state)],
+  });
+  return state;
 }
 
 export async function getAttendance(date) {
