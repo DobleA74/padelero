@@ -133,6 +133,15 @@ export async function addPlayer(name) {
   return { id: Number(result.lastInsertRowid), name };
 }
 
+export async function renamePlayer(id, name) {
+  await ensureSchema();
+  await client.execute({
+    sql: 'UPDATE players SET name = ? WHERE id = ?',
+    args: [name, id],
+  });
+  return { id, name };
+}
+
 export async function deletePlayer(id) {
   await ensureSchema();
   const { rows } = await client.execute({
@@ -212,6 +221,29 @@ export async function addMatch({
     ],
   });
   return { id: Number(result.lastInsertRowid) };
+}
+
+export async function updateMatch(id, {
+  teamA1Id, teamA2Id, teamB1Id, teamB2Id, winningTeam, loserSets,
+  smashA1, smashA2, smashB1, smashB2, scoreNote, playedAt,
+}) {
+  await ensureSchema();
+  await client.execute({
+    sql: `
+      UPDATE matches SET
+        team_a1_id = ?, team_a2_id = ?, team_b1_id = ?, team_b2_id = ?,
+        winning_team = ?, loser_sets = ?,
+        smash_a1 = ?, smash_a2 = ?, smash_b1 = ?, smash_b2 = ?,
+        score_note = ?, played_at = ?
+      WHERE id = ?
+    `,
+    args: [
+      teamA1Id, teamA2Id, teamB1Id, teamB2Id, winningTeam, loserSets,
+      smashA1 || 0, smashA2 || 0, smashB1 || 0, smashB2 || 0, scoreNote || null, playedAt,
+      id,
+    ],
+  });
+  return { id };
 }
 
 export async function deleteMatch(id) {

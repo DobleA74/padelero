@@ -12,6 +12,8 @@ const smashInputs = {
   B2: document.getElementById('smashB2'),
 };
 const matchForm = document.getElementById('match-form');
+const matchSubmitBtn = document.getElementById('match-submit');
+const matchCancelEditBtn = document.getElementById('match-cancel-edit');
 const matchError = document.getElementById('match-error');
 const scoreNoteInput = document.getElementById('scoreNote');
 const playedAtInput = document.getElementById('playedAt');
@@ -26,6 +28,8 @@ const matchesList = document.getElementById('matches-list');
 let selectedWinner = null; // 'A' | 'B'
 let selectedLoserSets = null; // 0 | 1
 let players = [];
+let matches = [];
+let editingMatchId = null;
 
 playedAtInput.value = new Date().toISOString().slice(0, 10);
 
@@ -83,7 +87,10 @@ function renderPlayersList() {
       (p) => `
       <li data-id="${p.id}">
         <span>${escapeHtml(p.name)}</span>
-        <button class="delete-btn" data-action="delete-player" data-id="${p.id}">Borrar</button>
+        <span class="item-actions">
+          <button class="edit-btn" data-action="edit-player" data-id="${p.id}">Editar</button>
+          <button class="delete-btn" data-action="delete-player" data-id="${p.id}">Borrar</button>
+        </span>
       </li>`
     )
     .join('');
@@ -118,7 +125,10 @@ function renderMatches(matches) {
       }${smashNote}</span>
           <span class="match-date">${m.playedAt}</span>
         </div>
-        <button class="delete-btn" data-action="delete-match" data-id="${m.id}">Borrar</button>
+        <span class="item-actions">
+          <button class="edit-btn" data-action="edit-match" data-id="${m.id}">Editar</button>
+          <button class="delete-btn" data-action="delete-match" data-id="${m.id}">Borrar</button>
+        </span>
       </li>`;
     })
     .join('');
@@ -139,8 +149,37 @@ async function loadRanking() {
 }
 
 async function loadMatches() {
-  const matches = await api('/api/matches');
+  matches = await api('/api/matches');
   renderMatches(matches);
+}
+
+function enterMatchEditMode(match) {
+  editingMatchId = match.id;
+  teamSelects.A1.value = String(match.teamA1Id);
+  teamSelects.A2.value = String(match.teamA2Id);
+  teamSelects.B1.value = String(match.teamB1Id);
+  teamSelects.B2.value = String(match.teamB2Id);
+  smashInputs.A1.value = match.smashA1;
+  smashInputs.A2.value = match.smashA2;
+  smashInputs.B1.value = match.smashB1;
+  smashInputs.B2.value = match.smashB2;
+  scoreNoteInput.value = match.scoreNote || '';
+  playedAtInput.value = match.playedAt;
+
+  selectedWinner = match.winningTeam;
+  winnerButtons.forEach((b) => b.classList.toggle('selected', b.dataset.target === match.winningTeam));
+  selectedLoserSets = match.loserSets;
+  scoreButtons.forEach((b) => b.classList.toggle('selected', Number(b.dataset.sets) === match.loserSets));
+
+  matchSubmitBtn.textContent = 'Guardar cambios';
+  matchCancelEditBtn.hidden = false;
+  matchForm.scrollIntoView({ behavior: 'smooth' });
+}
+
+function exitMatchEditMode() {
+  editingMatchId = null;
+  matchSubmitBtn.textContent = 'Guardar resultado';
+  matchCancelEditBtn.hidden = true;
 }
 
 winnerButtons.forEach((btn) => {
@@ -185,8 +224,9 @@ matchForm.addEventListener('submit', async (e) => {
   }
 
   try {
-    await api('/api/matches', {
-      method: 'POST',
+    const path = editingMatchId ? `/api/matches/${editingMatchId}` : '/api/matches';
+    await api(path, {
+      method: editingMatchId ? 'PATCH' : 'POST',
       body: JSON.stringify({
         teamA1Id,
         teamA2Id,
@@ -208,6 +248,17 @@ matchForm.addEventListener('submit', async (e) => {
   }
 });
 
+matchCancelEditBtn.addEventListener('click', () => {
+  exitMatchEditMode();
+  matchForm.reset();
+  playedAtInput.value = new Date().toISOString().slice(0, 10);
+  selectedWinner = null;
+  selectedLoserSets = null;
+  winnerButtons.forEach((b) => b.classList.remove('selected'));
+  scoreButtons.forEach((b) => b.classList.remove('selected'));
+  matchError.textContent = '';
+});
+
 playerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   playerError.textContent = '';
@@ -226,6 +277,28 @@ playerForm.addEventListener('submit', async (e) => {
 document.addEventListener('click', async (e) => {
   const target = e.target;
   if (!(target instanceof HTMLElement)) return;
+
+  if (target.dataset.action === 'edit-player') {
+    const id = Number(target.dataset.id);
+    const player = players.find((p) => p.id === id);
+    if (!player) return;
+    const newName = prompt('Nuevo nombre', player.name);
+    if (newName === null) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === player.name) return;
+    try {
+      await api(`/api/players/${id}`, { method: 'PATCH', body: JSON.stringify({ name: trimmed }) });
+      await Promise.all([loadRanking(), loadMatches()]);
+    } catch (err) {
+      playerError.textContent = err.message;
+    }
+  }
+
+  if (target.dataset.action === 'edit-match') {
+    const id = Number(target.dataset.id);
+    const match = matches.find((m) => m.id === id);
+    if (match) enterMatchEditMode(match);
+  }
 
   if (target.dataset.action === 'delete-player') {
     const id = target.dataset.id;
