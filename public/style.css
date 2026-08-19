@@ -189,7 +189,13 @@ select, input[type="text"], input[type="date"], input[type="number"] {
   font-size: 1rem;
 }
 
+.smash-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
 .smash-label {
+  flex: 1;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;

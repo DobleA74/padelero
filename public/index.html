@@ -16,7 +16,7 @@
   <main>
     <section class="card">
       <h2>Ranking</h2>
-      <p class="hint">Victoria 2-0 = 3 pts · Victoria 2-1 = 2 pts · Derrota 1-2 = 1 pt · Derrota 0-2 = 0 pts. Cada jugador suma según su resultado, sin importar con quién jugó ese partido. La pareja con más victorias juntos en un mismo día suma +2 pts extra cada uno (si hay empate, no se otorga el bonus). Cada remate ganador por la reja de 3 o 4 metros suma +1 pt para quien lo hizo.</p>
+      <p class="hint">Victoria 2-0 = 3 pts · Victoria 2-1 = 2 pts · Derrota 1-2 = 1 pt · Derrota 0-2 = 0 pts. Cada jugador suma según su resultado, sin importar con quién jugó ese partido. La pareja con más victorias juntos en un mismo día suma +2 pts extra cada uno (si hay empate, no se otorga el bonus). Cada remate ganador por la reja (3m o 4m) suma +1 pt para quien lo hizo.</p>
 
       <div class="range-filter">
         <label>
@@ -55,6 +55,14 @@
       <p class="hint">Parejas con al menos 3 partidos jugados juntas, ordenadas por % de victorias.</p>
       <ul id="partnerships-list">
         <li class="empty">Todavía no hay suficientes partidos</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Rematadores</h2>
+      <p class="hint">Remates ganadores por la reja, desglosados por distancia. Los cargados antes de esta función cuentan en el total como distancia no especificada.</p>
+      <ul id="smashes-list">
+        <li class="empty">Todavía no hay remates cargados</li>
       </ul>
     </section>
 
@@ -100,18 +108,30 @@
             Jugador 1
             <select id="teamA1" required></select>
           </label>
-          <label class="smash-label">
-            🎯 Remates por la reja (3-4m)
-            <input type="number" id="smashA1" min="0" value="0" />
-          </label>
+          <div class="smash-row">
+            <label class="smash-label">
+              🎯 Remates 3m
+              <input type="number" id="smashA1_3m" min="0" value="0" />
+            </label>
+            <label class="smash-label">
+              🎯 Remates 4m
+              <input type="number" id="smashA1_4m" min="0" value="0" />
+            </label>
+          </div>
           <label>
             Jugador 2
             <select id="teamA2" required></select>
           </label>
-          <label class="smash-label">
-            🎯 Remates por la reja (3-4m)
-            <input type="number" id="smashA2" min="0" value="0" />
-          </label>
+          <div class="smash-row">
+            <label class="smash-label">
+              🎯 Remates 3m
+              <input type="number" id="smashA2_3m" min="0" value="0" />
+            </label>
+            <label class="smash-label">
+              🎯 Remates 4m
+              <input type="number" id="smashA2_4m" min="0" value="0" />
+            </label>
+          </div>
         </fieldset>
 
         <fieldset>
@@ -120,18 +140,30 @@
             Jugador 1
             <select id="teamB1" required></select>
           </label>
-          <label class="smash-label">
-            🎯 Remates por la reja (3-4m)
-            <input type="number" id="smashB1" min="0" value="0" />
-          </label>
+          <div class="smash-row">
+            <label class="smash-label">
+              🎯 Remates 3m
+              <input type="number" id="smashB1_3m" min="0" value="0" />
+            </label>
+            <label class="smash-label">
+              🎯 Remates 4m
+              <input type="number" id="smashB1_4m" min="0" value="0" />
+            </label>
+          </div>
           <label>
             Jugador 2
             <select id="teamB2" required></select>
           </label>
-          <label class="smash-label">
-            🎯 Remates por la reja (3-4m)
-            <input type="number" id="smashB2" min="0" value="0" />
-          </label>
+          <div class="smash-row">
+            <label class="smash-label">
+              🎯 Remates 3m
+              <input type="number" id="smashB2_3m" min="0" value="0" />
+            </label>
+            <label class="smash-label">
+              🎯 Remates 4m
+              <input type="number" id="smashB2_4m" min="0" value="0" />
+            </label>
+          </div>
         </fieldset>
 
         <fieldset id="winner-fieldset">

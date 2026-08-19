@@ -6,11 +6,16 @@ const teamSelects = {
   B2: document.getElementById('teamB2'),
 };
 const smashInputs = {
-  A1: document.getElementById('smashA1'),
-  A2: document.getElementById('smashA2'),
-  B1: document.getElementById('smashB1'),
-  B2: document.getElementById('smashB2'),
+  A1_3m: document.getElementById('smashA1_3m'),
+  A1_4m: document.getElementById('smashA1_4m'),
+  A2_3m: document.getElementById('smashA2_3m'),
+  A2_4m: document.getElementById('smashA2_4m'),
+  B1_3m: document.getElementById('smashB1_3m'),
+  B1_4m: document.getElementById('smashB1_4m'),
+  B2_3m: document.getElementById('smashB2_3m'),
+  B2_4m: document.getElementById('smashB2_4m'),
 };
+const SMASH_KEYS = Object.keys(smashInputs);
 const matchForm = document.getElementById('match-form');
 const matchSubmitBtn = document.getElementById('match-submit');
 const matchCancelEditBtn = document.getElementById('match-cancel-edit');
@@ -179,6 +184,25 @@ function renderPartnerships(partnerships) {
         <span>${p.wins}-${p.losses} · ${Math.round(p.winRate * 100)}%</span>
       </li>`
     )
+    .join('');
+}
+
+function renderSmashLeaders(leaders) {
+  const list = document.getElementById('smashes-list');
+  const top = leaders.slice(0, 5);
+  if (top.length === 0) {
+    list.innerHTML = '<li class="empty">Todavía no hay remates cargados</li>';
+    return;
+  }
+  list.innerHTML = top
+    .map((r) => {
+      const legacyNote = r.legacy > 0 ? ` +${r.legacy} sin distancia` : '';
+      return `
+      <li>
+        <span>${avatarHtml(r.name)}${escapeHtml(r.name)}</span>
+        <span>${r.total} total · 3m x${r.m3} · 4m x${r.m4}${legacyNote}</span>
+      </li>`;
+    })
     .join('');
 }
 
@@ -362,10 +386,10 @@ function renderMatches(matches) {
       const winners = m.winningTeam === 'A' ? teamA : teamB;
       const setScore = m.loserSets === 0 ? '2-0' : '2-1';
       const smashes = [
-        [m.teamA1Name, m.smashA1],
-        [m.teamA2Name, m.smashA2],
-        [m.teamB1Name, m.smashB1],
-        [m.teamB2Name, m.smashB2],
+        [m.teamA1Name, m.smashA1_3m + m.smashA1_4m + m.smashA1Legacy],
+        [m.teamA2Name, m.smashA2_3m + m.smashA2_4m + m.smashA2Legacy],
+        [m.teamB1Name, m.smashB1_3m + m.smashB1_4m + m.smashB1Legacy],
+        [m.teamB2Name, m.smashB2_3m + m.smashB2_4m + m.smashB2Legacy],
       ].filter(([, count]) => count > 0);
       const smashNote = smashes.length
         ? ` · 🎯 ${smashes.map(([name, count]) => `${escapeHtml(name)} x${count}`).join(', ')}`
@@ -432,8 +456,13 @@ async function loadPartnerships() {
   renderPartnerships(partnerships);
 }
 
+async function loadSmashLeaders() {
+  const leaders = await api(`/api/smashes${buildRangeQuery()}`);
+  renderSmashLeaders(leaders);
+}
+
 async function loadAll() {
-  await Promise.all([loadRanking(), loadMatches(), loadPartnerships()]);
+  await Promise.all([loadRanking(), loadMatches(), loadPartnerships(), loadSmashLeaders()]);
 }
 
 rangeApplyBtn.addEventListener('click', async () => {
@@ -469,10 +498,9 @@ function enterMatchEditMode(match) {
   teamSelects.A2.value = String(match.teamA2Id);
   teamSelects.B1.value = String(match.teamB1Id);
   teamSelects.B2.value = String(match.teamB2Id);
-  smashInputs.A1.value = match.smashA1;
-  smashInputs.A2.value = match.smashA2;
-  smashInputs.B1.value = match.smashB1;
-  smashInputs.B2.value = match.smashB2;
+  for (const key of SMASH_KEYS) {
+    smashInputs[key].value = match[`smash${key}`] || 0;
+  }
   scoreNoteInput.value = match.scoreNote || '';
   playedAtInput.value = match.playedAt;
 
@@ -550,10 +578,7 @@ matchForm.addEventListener('submit', async (e) => {
         teamB2Id,
         winningTeam: selectedWinner,
         loserSets: selectedLoserSets,
-        smashA1: Number(smashInputs.A1.value) || 0,
-        smashA2: Number(smashInputs.A2.value) || 0,
-        smashB1: Number(smashInputs.B1.value) || 0,
-        smashB2: Number(smashInputs.B2.value) || 0,
+        ...Object.fromEntries(SMASH_KEYS.map((key) => [`smash${key}`, Number(smashInputs[key].value) || 0])),
         scoreNote: scoreNoteInput.value.trim() || undefined,
         playedAt: playedAtInput.value,
       }),
@@ -565,10 +590,7 @@ matchForm.addEventListener('submit', async (e) => {
     selectedLoserSets = null;
     winnerButtons.forEach((b) => b.classList.remove('selected'));
     scoreButtons.forEach((b) => b.classList.remove('selected'));
-    smashInputs.A1.value = 0;
-    smashInputs.A2.value = 0;
-    smashInputs.B1.value = 0;
-    smashInputs.B2.value = 0;
+    for (const key of SMASH_KEYS) smashInputs[key].value = 0;
     scoreNoteInput.value = '';
 
     await loadAll();

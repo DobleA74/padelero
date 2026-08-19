@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   getRanking,
   getPartnerships,
+  getSmashLeaders,
   addPlayer,
   renamePlayer,
   deletePlayer,
@@ -89,6 +90,12 @@ app.get('/api/partnerships', asyncHandler(async (req, res) => {
   res.json(await getPartnerships(value));
 }));
 
+app.get('/api/smashes', asyncHandler(async (req, res) => {
+  const { error, value } = parseDateRange(req.query);
+  if (error) return res.status(400).json({ error });
+  res.json(await getSmashLeaders(value));
+}));
+
 app.get('/api/attendance', asyncHandler(async (req, res) => {
   const date = req.query.date;
   if (!date || !DATE_RE.test(date)) {
@@ -151,10 +158,15 @@ app.delete('/api/rotation', requirePin, asyncHandler(async (req, res) => {
   res.status(204).end();
 }));
 
+const SMASH_FIELDS = [
+  'smashA1_3m', 'smashA1_4m', 'smashA2_3m', 'smashA2_4m',
+  'smashB1_3m', 'smashB1_4m', 'smashB2_3m', 'smashB2_4m',
+];
+
 function validateMatchInput(body) {
   const {
     teamA1Id, teamA2Id, teamB1Id, teamB2Id, winningTeam, loserSets,
-    smashA1, smashA2, smashB1, smashB2, scoreNote, playedAt,
+    scoreNote, playedAt,
   } = body || {};
 
   if (!teamA1Id || !teamA2Id || !teamB1Id || !teamB2Id) {
@@ -170,9 +182,13 @@ function validateMatchInput(body) {
   if (loserSets !== 0 && loserSets !== 1) {
     return { error: 'Falta indicar el marcador (2-0 o 2-1)' };
   }
-  const smashValues = [smashA1, smashA2, smashB1, smashB2].map((v) => (v === undefined ? 0 : v));
-  if (smashValues.some((v) => !Number.isInteger(v) || v < 0)) {
-    return { error: 'Los remates deben ser números enteros positivos' };
+  const smashes = {};
+  for (const field of SMASH_FIELDS) {
+    const v = body?.[field] === undefined ? 0 : body[field];
+    if (!Number.isInteger(v) || v < 0) {
+      return { error: 'Los remates deben ser números enteros positivos' };
+    }
+    smashes[field] = v;
   }
   const resolvedPlayedAt = playedAt || new Date().toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
@@ -188,10 +204,7 @@ function validateMatchInput(body) {
       teamB2Id,
       winningTeam,
       loserSets,
-      smashA1: smashValues[0],
-      smashA2: smashValues[1],
-      smashB1: smashValues[2],
-      smashB2: smashValues[3],
+      ...smashes,
       scoreNote,
       playedAt: resolvedPlayedAt,
     },
